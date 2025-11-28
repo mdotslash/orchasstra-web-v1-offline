@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OrchAssTra PWA</title>
+    
+    <meta http-equiv="Content-Security-Policy" 
+          content="default-src 'self'; 
+                   script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; 
+                   style-src 'self' 'unsafe-inline'; 
+                   img-src 'self' data:; 
+                   media-src 'self' blob:; 
+                   connect-src 'self';">
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#222222">
+
+    <style>
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body { 
+            font-family: monospace; 
+            background: #222; 
+            color: #0f0; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0;
+            padding: 10px;
+            overflow: hidden; 
+        }
+
+        .controls {
+            flex: 0 0 auto; 
+            margin-bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+
+        button { 
+            padding: 20px 40px; 
+            font-size: 1.2rem; 
+            cursor: pointer; 
+            border: none; 
+            font-family: monospace; 
+            font-weight: bold;
+            width: 100%;
+            max-width: 400px;
+            border-radius: 8px;
+            touch-action: manipulation; 
+        }
+
+        #start-btn { background: #555; color: #aaa; }
+        #start-btn.ready { background: #0f0; color: #000; }
+        #stop-btn { background: #f00; color: #fff; display: none; }
+
+        #status { 
+            margin-top: 5px; 
+            color: #666; 
+            font-size: 0.8rem; 
+            height: 20px; 
+            text-align: center;
+        }
+        
+        .visual-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+            gap: 10px;
+            width: 100%;
+            max-width: 600px;
+            flex: 1; 
+            align-content: center; 
+        }
+
+        .track-visual {
+            aspect-ratio: 1 / 1; 
+            border: 2px solid #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            opacity: 0.3;
+            transition: all 0.05s;
+            font-size: 0.8rem;
+            padding: 5px;
+            background: #111;
+            border-radius: 6px;
+            user-select: none; 
+            cursor: pointer;
+        }
+
+        .track-visual span { pointer-events: none; }
+        .note-label { font-size: 0.6rem; color: #666; margin-top: 4px; }
+
+        .track-visual.active {
+            opacity: 1;
+            border-color: #fff;
+            box-shadow: 0 0 15px #0f0;
+            background: #222;
+            transform: scale(0.95); 
+        }
+        
+        #vis-doug { 
+            grid-column: 1 / -1; 
+            aspect-ratio: auto;
+            height: 60px;
+            opacity: 0.6; 
+            border-color: #555; 
+            margin-bottom: 10px;
+        }
+        #vis-doug.active { opacity: 1; border-color: #0f0; }
+
+        @media (max-height: 700px) {
+            .visual-container { gap: 6px; }
+            .track-visual { font-size: 0.7rem; }
+            button { padding: 15px; font-size: 1rem; }
+        }
+    </style>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/webmidi@3.1.6/dist/iife/webmidi.iife.js"></script>
+</head>
+<body>
+
+    <div class="controls">
+        <button id="start-btn" disabled>LOADING AUDIO...</button>
+        <button id="stop-btn">STOP ENGINE</button>
+    </div>
+    
+    <div id="status">Tap squares to play</div>
+
+    <div class="visual-container">
+        <div id="vis-doug" class="track-visual active"><span>BED (Looping HH)</span></div>
+        <div id="vis-stem1" class="track-visual" data-id="stem1"><span>STEM 1<br>Dumb Girl</span><span class="note-label">A / 60</span></div>
+        <div id="vis-stem2" class="track-visual" data-id="stem2"><span>STEM 2<br>Chords</span><span class="note-label">S / 61</span></div>
+        <div id="vis-stem3" class="track-visual" data-id="stem3"><span>STEM 3<br>Lead</span><span class="note-label">D / 62</span></div>
+        <div id="vis-stem4" class="track-visual" data-id="stem4"><span>STEM 4<br>Bass</span><span class="note-label">F / 63</span></div>
+        <div id="vis-stem5" class="track-visual" data-id="stem5"><span>STEM 5<br>Percussion</span><span class="note-label">G / 64</span></div>
+        <div id="vis-stem6" class="track-visual" data-id="stem6"><span>STEM 6<br>Drums</span><span class="note-label">H / 65</span></div>
+    </div>
+
+    <script>
+        const BPM = 107;
+        const TRACK_CONFIG = [
+            { id: "stem1", note: 60, key: "a", visualId: "vis-stem1" },
+            { id: "stem2", note: 61, key: "s", visualId: "vis-stem2" },
+            { id: "stem3", note: 62, key: "d", visualId: "vis-stem3" },
+            { id: "stem4", note: 63, key: "f", visualId: "vis-stem4" },
+            { id: "stem5", note: 64, key: "g", visualId: "vis-stem5" },
+            { id: "stem6", note: 65, key: "h", visualId: "vis-stem6" }
+        ];
+
+        const players = new Tone.Players({
+            doug:  "assets/doug.wav",
+            stem1: "assets/stem1.wav",
+            stem2: "assets/stem2.wav",
+            stem3: "assets/stem3.wav",
+            stem4: "assets/stem4.wav",
+            stem5: "assets/stem5.wav",
+            stem6: "assets/stem6.wav"
+        }).toDestination();
+
+        const doug = players.player("doug");
+        doug.loop = true;
+        doug.sync().start(0);
+        doug.volume.value = 0; 
+
+        TRACK_CONFIG.forEach(track => {
+            const player = players.player(track.id);
+            player.loop = true;
+            player.sync().start(0);
+            player.volume.value = -Infinity;
+        });
+
+        Tone.Transport.bpm.value = BPM;
+
+        Tone.loaded().then(() => {
+            const btn = document.getElementById("start-btn");
+            btn.innerText = "START ENGINE";
+            btn.disabled = false;
+            btn.classList.add("ready");
+            document.getElementById("status").innerText = "Audio Ready. Touch/Key/Butt to play.";
+        });
+
+        function toggleStem(trackId, isActive) {
+            const config = TRACK_CONFIG.find(t => t.id === trackId);
+            if (!config) return;
+            const player = players.player(trackId);
+            const visual = document.getElementById(config.visualId);
+            
+            if (isActive) {
+                player.volume.rampTo(0, 0.05); 
+                visual.classList.add("active");
+            } else {
+                player.volume.rampTo(-Infinity, 0.1); 
+                visual.classList.remove("active");
+            }
+        }
+
+        document.getElementById("start-btn").addEventListener("click", async () => {
+            await Tone.start();
+            Tone.Transport.start();
+            document.getElementById("start-btn").style.display = "none";
+            document.getElementById("stop-btn").style.display = "block";
+            if (!WebMidi.enabled) WebMidi.enable().then(onMidiEnabled);
+        });
+
+        document.getElementById("stop-btn").addEventListener("click", () => {
+            Tone.Transport.stop();
+            document.getElementById("start-btn").style.display = "block";
+            document.getElementById("stop-btn").style.display = "none";
+        });
+
+        function onMidiEnabled() {
+            if (WebMidi.inputs.length > 0) {
+                const myInput = WebMidi.inputs[0]; 
+                myInput.addListener("noteon", e => {
+                    const track = TRACK_CONFIG.find(t => t.note === e.note.number);
+                    if (track) toggleStem(track.id, true);
+                });
+                myInput.addListener("noteoff", e => {
+                    const track = TRACK_CONFIG.find(t => t.note === e.note.number);
+                    if (track) toggleStem(track.id, false);
+                });
+            }
+        }
+
+        window.addEventListener("keydown", (e) => {
+            if (e.repeat) return; 
+            const track = TRACK_CONFIG.find(t => t.key === e.key);
+            if (track) toggleStem(track.id, true);
+        });
+        window.addEventListener("keyup", (e) => {
+            const track = TRACK_CONFIG.find(t => t.key === e.key);
+            if (track) toggleStem(track.id, false);
+        });
+
+        document.querySelectorAll('.track-visual').forEach(el => {
+            if (el.id === 'vis-doug') return; 
+            el.addEventListener('mousedown', (e) => { e.preventDefault(); toggleStem(el.dataset.id, true); });
+            el.addEventListener('mouseup', (e) => { e.preventDefault(); toggleStem(el.dataset.id, false); });
+            el.addEventListener('mouseleave', (e) => { toggleStem(el.dataset.id, false); });
+            el.addEventListener('touchstart', (e) => { e.preventDefault(); toggleStem(el.dataset.id, true); });
+            el.addEventListener('touchend', (e) => { e.preventDefault(); toggleStem(el.dataset.id, false); });
+        });
+
+   // 3. SERVICE WORKER REGISTRATION (OFFLINE MODE)
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", () => {
+                navigator.serviceWorker.register("sw.js")
+                    .then((registration) => {
+                        console.log("Service Worker Registered");
+                        
+                        // NOTIFICATION: Update status text when ready
+                        const statusDiv = document.getElementById("status");
+                        
+                        // If it's already active, we are good
+                        if (registration.active) {
+                            statusDiv.innerText += " (Offline Ready)";
+                        } 
+                        // If it's installing for the first time
+                        else if (registration.installing) {
+                            registration.installing.onstatechange = (e) => {
+                                if (e.target.state === "activated") {
+                                    statusDiv.innerText = "Download Complete. Offline Ready.";
+                                }
+                            };
+                        }
+                    })
+                    .catch(err => console.log("SW Registration Failed:", err));
+            });
+        }
+    </script>
+</body>
+</html>
