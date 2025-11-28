@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>OrchAssTra PWA</title>
     
-    <meta http-equiv="Content-Security-Policy" 
+<meta http-equiv="Content-Security-Policy" 
           content="default-src 'self'; 
                    script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; 
+                   worker-src 'self' blob:; 
                    style-src 'self' 'unsafe-inline'; 
-                   img-src 'self' data:; 
+                   img-src 'self' data: https://via.placeholder.com; 
                    media-src 'self' blob:; 
-                   connect-src 'self';">
+                   connect-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;">
 
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#222222">
