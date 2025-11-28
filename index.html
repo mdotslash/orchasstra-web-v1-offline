@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>OrchAssTra PWA</title>
     
-<meta http-equiv="Content-Security-Policy" 
+    <meta http-equiv="Content-Security-Policy" 
           content="default-src 'self'; 
                    script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; 
                    worker-src 'self' blob:; 
@@ -14,6 +14,7 @@
                    media-src 'self' blob:; 
                    connect-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;">
 
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍑</text></svg>">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#222222">
 
@@ -32,6 +33,29 @@
             margin: 0;
             padding: 10px;
             overflow: hidden; 
+        }
+
+    /* --- PARTY MODE VISUALS --- */
+        #party-bg {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -1; /* Behind everything */
+            opacity: 0;  /* Start invisible */
+            background: #222;
+            pointer-events: none;
+        }
+
+        /* The Rainbow Animation runs constantly, but is hidden by opacity */
+        #party-bg.active {
+            animation: rainbow 0.2s infinite alternate;
+        }
+
+        @keyframes rainbow { 
+            0% { background: #330000; }
+            25% { background: #331a00; }
+            50% { background: #003300; }
+            75% { background: #000033; }
+            100% { background: #330033; }
         }
 
         .controls {
@@ -127,10 +151,11 @@
     <script src="https://cdn.jsdelivr.net/npm/webmidi@3.1.6/dist/iife/webmidi.iife.js"></script>
 </head>
 <body>
+    <div id="party-bg"></div>
 
     <div class="controls">
         <button id="start-btn" disabled>LOADING AUDIO...</button>
-        <button id="stop-btn">STOP ENGINE</button>
+        <button id="stop-btn">STOP</button>
     </div>
     
     <div id="status">Tap squares to play</div>
@@ -156,6 +181,11 @@
             { id: "stem6", note: 65, key: "h", visualId: "vis-stem6" }
         ];
 
+        // --- STATE TRACKING ---
+        const activeStems = new Set();
+        let isSpacebarDown = false;
+
+        // --- AUDIO SETUP ---
         const players = new Tone.Players({
             doug:  "assets/doug.wav",
             stem1: "assets/stem1.wav",
@@ -163,13 +193,20 @@
             stem3: "assets/stem3.wav",
             stem4: "assets/stem4.wav",
             stem5: "assets/stem5.wav",
-            stem6: "assets/stem6.wav"
+            stem6: "assets/stem6.wav",
+            secret: "assets/secret.wav" 
         }).toDestination();
 
         const doug = players.player("doug");
         doug.loop = true;
         doug.sync().start(0);
         doug.volume.value = 0; 
+
+        // Secret Setup
+        const secret = players.player("secret");
+        secret.loop = true;
+        secret.sync().start(0);
+        secret.volume.value = -Infinity;
 
         TRACK_CONFIG.forEach(track => {
             const player = players.player(track.id);
@@ -182,12 +219,12 @@
 
         Tone.loaded().then(() => {
             const btn = document.getElementById("start-btn");
-            btn.innerText = "START ENGINE";
+            btn.innerText = "START 🍑";
             btn.disabled = false;
             btn.classList.add("ready");
-            document.getElementById("status").innerText = "Audio Ready. Touch/Key/Butt to play.";
         });
 
+        // --- LOGIC ---
         function toggleStem(trackId, isActive) {
             const config = TRACK_CONFIG.find(t => t.id === trackId);
             if (!config) return;
@@ -197,18 +234,113 @@
             if (isActive) {
                 player.volume.rampTo(0, 0.05); 
                 visual.classList.add("active");
+                activeStems.add(trackId);
             } else {
                 player.volume.rampTo(-Infinity, 0.1); 
                 visual.classList.remove("active");
+                activeStems.delete(trackId);
+            }
+            checkSecret();
+        }
+
+// Tracking timeouts so we can cancel them if you let go
+        let visualTimeouts = [];
+
+        function setSecretState(isActive) {
+            const now = Tone.now(); 
+            const bg = document.getElementById("party-bg");
+
+            if (isActive) {
+                // Check if currently silent
+                if (secret.volume.value < -90) { 
+                    console.log("SECRET STARTED");
+                    
+                    // --- AUDIO LOGIC (Your fine-tuned ramps) ---
+                    secret.volume.cancelScheduledValues(now);
+                    secret.volume.setValueAtTime(-100, now);
+                    
+                    // 1. Surge to -30dB in 0.2s
+                    secret.volume.linearRampToValueAtTime(-30, now + 0.2);
+                    // 2. Build to -6dB at 3s
+                    secret.volume.linearRampToValueAtTime(-6, now + 3);
+                    // 3. Climax to 0dB at 7s
+                    secret.volume.linearRampToValueAtTime(0, now + 7);
+
+
+                    // --- VISUAL SYNC LOGIC ---
+                    
+                    // Clear any pending fade-outs
+                    visualTimeouts.forEach(id => clearTimeout(id));
+                    visualTimeouts = [];
+
+                    // Activate the animation layer
+                    bg.classList.add("active");
+
+                    // STAGE 1: SURGE (Immediate jump to 30% opacity)
+                    // We use a fast transition (0.2s) to match the audio surge
+                    bg.style.transition = "opacity 0.2s ease-out";
+                    bg.style.opacity = "0.3"; 
+
+                    // STAGE 2: BUILD (Ramp to 70% opacity by 3s)
+                    // We wait 0.2s, then start a 2.8s transition
+                    let t1 = setTimeout(() => {
+                        bg.style.transition = "opacity 2.8s linear";
+                        bg.style.opacity = "0.7";
+                    }, 200);
+
+                    // STAGE 3: CLIMAX (Ramp to 100% opacity by 7s)
+                    // We wait 3s, then start a 4s transition
+                    let t2 = setTimeout(() => {
+                        bg.style.transition = "opacity 4.0s linear";
+                        bg.style.opacity = "1.0";
+                    }, 3000);
+
+                    visualTimeouts.push(t1, t2);
+                }
+            } else {
+                // BUTTON RELEASED
+                if (secret.volume.value > -90) {
+                    // Audio Fade Out
+                    secret.volume.cancelScheduledValues(now);
+                    secret.volume.setValueAtTime(secret.volume.value, now);
+                    secret.volume.linearRampToValueAtTime(-100, now + 0.5);
+                    
+                    // Visual Fade Out
+                    // Cancel the build-up timers
+                    visualTimeouts.forEach(id => clearTimeout(id));
+                    visualTimeouts = [];
+
+                    // Quick fade to black (0.5s)
+                    bg.style.transition = "opacity 0.5s ease-out";
+                    bg.style.opacity = "0";
+                    
+                    // Optional: Remove class after fade is done to save CPU
+                    setTimeout(() => bg.classList.remove("active"), 500);
+                }
             }
         }
 
+        function checkSecret() {
+            if (activeStems.size === 6 || isSpacebarDown) {
+                setSecretState(true);
+            } else {
+                setSecretState(false);
+            }
+        }
+
+        // --- CONTROLS ---
         document.getElementById("start-btn").addEventListener("click", async () => {
             await Tone.start();
             Tone.Transport.start();
             document.getElementById("start-btn").style.display = "none";
             document.getElementById("stop-btn").style.display = "block";
-            if (!WebMidi.enabled) WebMidi.enable().then(onMidiEnabled);
+            
+            // MIDI SETUP (Silences the yellow warning by being explicit)
+            if (!WebMidi.enabled) {
+                WebMidi.enable({ sysex: false })
+                    .then(onMidiEnabled)
+                    .catch(err => console.log("MIDI Error:", err));
+            }
         });
 
         document.getElementById("stop-btn").addEventListener("click", () => {
@@ -217,6 +349,7 @@
             document.getElementById("stop-btn").style.display = "none";
         });
 
+        // --- INPUTS ---
         function onMidiEnabled() {
             if (WebMidi.inputs.length > 0) {
                 const myInput = WebMidi.inputs[0]; 
@@ -233,14 +366,19 @@
 
         window.addEventListener("keydown", (e) => {
             if (e.repeat) return; 
+            if (e.code === "Space") { isSpacebarDown = true; checkSecret(); return; } 
+
             const track = TRACK_CONFIG.find(t => t.key === e.key);
             if (track) toggleStem(track.id, true);
         });
         window.addEventListener("keyup", (e) => {
+            if (e.code === "Space") { isSpacebarDown = false; checkSecret(); return; }
+
             const track = TRACK_CONFIG.find(t => t.key === e.key);
             if (track) toggleStem(track.id, false);
         });
 
+        // Touch Listeners
         document.querySelectorAll('.track-visual').forEach(el => {
             if (el.id === 'vis-doug') return; 
             el.addEventListener('mousedown', (e) => { e.preventDefault(); toggleStem(el.dataset.id, true); });
@@ -250,21 +388,16 @@
             el.addEventListener('touchend', (e) => { e.preventDefault(); toggleStem(el.dataset.id, false); });
         });
 
-   // 3. SERVICE WORKER REGISTRATION (OFFLINE MODE)
+        // 3. SERVICE WORKER REGISTRATION
         if ("serviceWorker" in navigator) {
             window.addEventListener("load", () => {
                 navigator.serviceWorker.register("sw.js")
                     .then((registration) => {
                         console.log("Service Worker Registered");
-                        
-                        // NOTIFICATION: Update status text when ready
                         const statusDiv = document.getElementById("status");
-                        
-                        // If it's already active, we are good
                         if (registration.active) {
                             statusDiv.innerText += " (Offline Ready)";
                         } 
-                        // If it's installing for the first time
                         else if (registration.installing) {
                             registration.installing.onstatechange = (e) => {
                                 if (e.target.state === "activated") {
